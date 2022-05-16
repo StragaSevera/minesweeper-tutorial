@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 #[cfg(feature = "debug")]
 use bevy_inspector_egui::WorldInspectorPlugin;
+use board_plugin::BoardPlugin;
 
 fn main() {
     let mut app = App::new();
@@ -11,8 +12,9 @@ fn main() {
         width: 700.,
         height: 800.,
         ..Default::default()
-    });
-    app.add_plugins(DefaultPlugins);
+    })
+    .add_plugins(DefaultPlugins)
+    .add_plugin(BoardPlugin);
 
     #[cfg(feature = "debug")]
     app.add_plugin(WorldInspectorPlugin::new());
