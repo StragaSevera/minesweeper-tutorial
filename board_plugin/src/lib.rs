@@ -14,20 +14,37 @@ use crate::{
         uncover::{trigger_event_handler, uncover_tiles},
     },
 };
-use bevy::utils::HashMap;
-use bevy::{ecs::system::EntityCommands, math::Vec3Swizzles, prelude::*};
+use bevy::{
+    ecs::schedule::StateData, ecs::system::EntityCommands, math::Vec3Swizzles, prelude::*,
+    utils::HashMap,
+};
 #[cfg(feature = "debug")]
 use bevy_inspector_egui::RegisterInspectable;
 
-pub struct BoardPlugin;
+pub struct BoardPlugin<T> {
+    pub running_state: T,
+}
 
-impl Plugin for BoardPlugin {
+impl<T: StateData> Plugin for BoardPlugin<T> {
     fn build(&self, app: &mut App) {
-        app.add_startup_system(Self::create_board)
-            .add_system(input_handling)
-            .add_event::<TileTriggerEvent>()
-            .add_system(trigger_event_handler)
-            .add_system(uncover_tiles);
+        // When the running states comes into the stack we load a board
+        app.add_system_set(
+            SystemSet::on_enter(self.running_state.clone()).with_system(Self::create_board),
+        )
+        // We handle input and trigger events only if the state is active
+        .add_system_set(
+            SystemSet::on_update(self.running_state.clone())
+                .with_system(input_handling)
+                .with_system(trigger_event_handler),
+        )
+        // We handle uncovering even if the state is inactive
+        .add_system_set(
+            SystemSet::on_in_stack_update(self.running_state.clone()).with_system(uncover_tiles),
+        )
+        .add_system_set(
+            SystemSet::on_exit(self.running_state.clone()).with_system(Self::cleanup_board),
+        )
+        .add_event::<TileTriggerEvent>();
         info!("Loaded Board Plugin");
 
         // registering custom components to be able to edit it in inspector
@@ -41,7 +58,7 @@ impl Plugin for BoardPlugin {
     }
 }
 
-impl BoardPlugin {
+impl<T> BoardPlugin<T> {
     /// System to generate the complete board
     pub fn create_board(
         mut commands: Commands,
@@ -65,7 +82,7 @@ impl BoardPlugin {
             HashMap::with_capacity((tile_map.width() * tile_map.height()).into());
         let mut safe_start = None;
 
-        commands
+        let board_entity = commands
             .spawn()
             .insert(Name::new("Board"))
             .insert(Transform::from_translation(board_position))
@@ -84,18 +101,25 @@ impl BoardPlugin {
                     &mut covered_tiles,
                     &mut safe_start,
                 );
-            });
+            })
+            .id();
         commands.insert_resource(Board {
             tile_map,
             tile_size,
             covered_tiles,
             bounds: Bounds2 { position: board_position.xy(), size: board_size },
+            entity: board_entity,
         });
         if options.safe_start {
             if let Some(entity) = safe_start {
                 commands.entity(entity).insert(Uncover);
             }
         }
+    }
+
+    fn cleanup_board(board: Res<Board>, mut commands: Commands) {
+        commands.entity(board.entity).despawn_recursive();
+        commands.remove_resource::<Board>();
     }
 
     fn build_map(options: &BoardOptions) -> TileMap {

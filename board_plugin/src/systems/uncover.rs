@@ -1,5 +1,5 @@
 use crate::{events::TileTriggerEvent, Board, Bomb, BombNeighbor, Coordinates, Uncover};
-use bevy::{log, prelude::*};
+use bevy::prelude::*;
 
 pub fn trigger_event_handler(
     mut commands: Commands,
