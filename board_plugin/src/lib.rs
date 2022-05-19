@@ -63,6 +63,7 @@ impl BoardPlugin {
         let board_position = Self::build_board_position(&options, board_size);
         let mut covered_tiles =
             HashMap::with_capacity((tile_map.width() * tile_map.height()).into());
+        let mut safe_start = None;
 
         commands
             .spawn()
@@ -81,6 +82,7 @@ impl BoardPlugin {
                     font,
                     Color::DARK_GRAY,
                     &mut covered_tiles,
+                    &mut safe_start,
                 );
             });
         commands.insert_resource(Board {
@@ -89,6 +91,11 @@ impl BoardPlugin {
             covered_tiles,
             bounds: Bounds2 { position: board_position.xy(), size: board_size },
         });
+        if options.safe_start {
+            if let Some(entity) = safe_start {
+                commands.entity(entity).insert(Uncover);
+            }
+        }
     }
 
     fn build_map(options: &BoardOptions) -> TileMap {
@@ -151,6 +158,7 @@ impl BoardPlugin {
         font: Handle<Font>,
         covered_tile_color: Color,
         covered_tiles: &mut HashMap<Coordinates, Entity>,
+        safe_start_entity: &mut Option<Entity>,
     ) {
         // Tiles
         for (y, line) in tile_map.iter().enumerate() {
@@ -168,6 +176,8 @@ impl BoardPlugin {
                     color,
                     covered_tile_color,
                     covered_tiles,
+                    safe_start_entity,
+                    tile,
                 );
 
                 match tile {
@@ -230,6 +240,8 @@ impl BoardPlugin {
         color: Color,
         covered_tile_color: Color,
         covered_tiles: &mut HashMap<Coordinates, Entity>,
+        safe_start_entity: &mut Option<Entity>,
+        tile: &Tile,
     ) {
         tile_entity
             .insert_bundle(SpriteBundle {
@@ -254,6 +266,8 @@ impl BoardPlugin {
             padding,
             size,
             coordinates,
+            safe_start_entity,
+            tile,
         );
     }
 
@@ -264,6 +278,8 @@ impl BoardPlugin {
         padding: f32,
         size: f32,
         coordinates: Coordinates,
+        safe_start_entity: &mut Option<Entity>,
+        tile: &Tile,
     ) {
         tile_entity.with_children(|parent| {
             let entity = parent
@@ -279,6 +295,9 @@ impl BoardPlugin {
                 .insert(Name::new("Tile Cover"))
                 .id();
             covered_tiles.insert(coordinates, entity);
+            if safe_start_entity.is_none() && *tile == Tile::Empty {
+                *safe_start_entity = Some(entity);
+            }
         });
     }
 

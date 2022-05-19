@@ -1,6 +1,5 @@
 use crate::Board;
 use bevy::input::{mouse::MouseButtonInput, ElementState};
-use bevy::log;
 use bevy::prelude::*;
 use crate::events::TileTriggerEvent;
 
