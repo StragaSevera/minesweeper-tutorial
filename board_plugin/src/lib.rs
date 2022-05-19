@@ -157,6 +157,7 @@ impl BoardPlugin {
         }
     }
 
+    //noinspection RsTypeCheck
     fn insert_bomb(size: f32, padding: f32, bomb_image: &Handle<Image>, cmd: &mut EntityCommands) {
         cmd.insert(Bomb);
         cmd.with_children(|parent| {
