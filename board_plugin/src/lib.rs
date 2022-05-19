@@ -136,20 +136,11 @@ impl BoardPlugin {
                 Self::insert_tile(&mut cmd, padding, size, y, x, coordinates, color);
 
                 match tile {
-                    // If the tile is a bomb we add the matching component and a sprite child
                     Tile::Bomb => {
-                        Self::insert_bomb(size, padding, &bomb_image, &mut cmd);
+                        Self::insert_bomb(&mut cmd, &bomb_image, padding, size);
                     }
-                    // If the tile is a bomb neighbour we add the matching component and a text child
-                    Tile::BombNeighbor(v) => {
-                        cmd.insert(BombNeighbor { count: *v });
-                        cmd.with_children(|parent| {
-                            parent.spawn_bundle(Self::bomb_count_text_bundle(
-                                *v,
-                                font.clone(),
-                                size - padding,
-                            ));
-                        });
+                    Tile::BombNeighbor(count) => {
+                        Self::insert_bomb_neighbor(&mut cmd, &font, *count, size, padding);
                     }
                     Tile::Empty => (),
                 }
@@ -158,7 +149,8 @@ impl BoardPlugin {
     }
 
     //noinspection RsTypeCheck
-    fn insert_bomb(size: f32, padding: f32, bomb_image: &Handle<Image>, cmd: &mut EntityCommands) {
+    fn insert_bomb(cmd: &mut EntityCommands, bomb_image: &Handle<Image>, padding: f32, size: f32) {
+        // If the tile is a bomb we add the matching component and a sprite child
         cmd.insert(Bomb);
         cmd.with_children(|parent| {
             parent.spawn_bundle(SpriteBundle {
@@ -170,6 +162,21 @@ impl BoardPlugin {
                 texture: bomb_image.clone(),
                 ..Default::default()
             });
+        });
+    }
+
+    //noinspection RsTypeCheck
+    fn insert_bomb_neighbor(
+        cmd: &mut EntityCommands,
+        font: &Handle<Font>,
+        count: u8,
+        size: f32,
+        padding: f32,
+    ) {
+        // If the tile is a bomb neighbour we add the matching component and a text child
+        cmd.insert(BombNeighbor { count });
+        cmd.with_children(|parent| {
+            parent.spawn_bundle(Self::bomb_count_text_bundle(count, font.clone(), size - padding));
         });
     }
 
