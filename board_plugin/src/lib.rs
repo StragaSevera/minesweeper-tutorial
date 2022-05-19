@@ -6,8 +6,9 @@ use crate::{
     components::*,
     resources::{tile_map::TileMap, BoardOptions, BoardPosition, TileSize},
 };
-#[cfg(feature = "debug")]
+use bevy::ecs::system::EntityCommands;
 use bevy::prelude::*;
+#[cfg(feature = "debug")]
 use bevy_inspector_egui::RegisterInspectable;
 
 pub struct BoardPlugin;
@@ -43,36 +44,11 @@ impl BoardPlugin {
             Some(o) => o.clone(),
         };
 
-        // Tilemap generation
-        let mut tile_map = TileMap::empty(options.map_size.0, options.map_size.1);
-        tile_map.set_bombs(options.bomb_count);
-        // Tilemap debugging
-        #[cfg(feature = "debug")]
-        info!("{}", tile_map.console_output());
-
-        // We define the size of our tiles in world space
-        let tile_size = match options.tile_size {
-            TileSize::Fixed(v) => v,
-            TileSize::Adaptive { min, max } => Self::adaptative_tile_size(
-                window,
-                (min, max),
-                (tile_map.width(), tile_map.height()),
-            ),
-        };
-
-        // We deduce the size of the complete board
-        let board_size = Vec2::new(
-            tile_map.width() as f32 * tile_size,
-            tile_map.height() as f32 * tile_size,
-        );
-        info!("board size: {}", board_size);
-        // We define the board anchor position (bottom left)
-        let board_position = match options.position {
-            BoardPosition::Centered { offset } => {
-                Vec3::new(-(board_size.x / 2.), -(board_size.y / 2.), 0.) + offset
-            }
-            BoardPosition::Custom(p) => p,
-        };
+        let tile_map = Self::build_map(&options);
+        let tile_size = Self::build_tile_size(window, &options, &tile_map);
+        let board_size =
+            Vec2::new(tile_map.width() as f32 * tile_size, tile_map.height() as f32 * tile_size);
+        let board_position = Self::build_board_position(&options, board_size);
 
         commands
             .spawn()
@@ -80,20 +56,7 @@ impl BoardPlugin {
             .insert(Transform::from_translation(board_position))
             .insert(GlobalTransform::default())
             .with_children(|parent| {
-                // We spawn the board background sprite at the center of the board,
-                // since the sprite pivot is centered
-                parent
-                    .spawn_bundle(SpriteBundle {
-                        sprite: Sprite {
-                            color: Color::WHITE,
-                            custom_size: Some(board_size),
-                            ..Default::default()
-                        },
-                        transform: Transform::from_xyz(board_size.x / 2., board_size.y / 2., 0.),
-                        ..Default::default()
-                    })
-                    .insert(Name::new("Background"));
-
+                Self::spawn_background(board_size, parent);
                 Self::spawn_tiles(
                     parent,
                     &tile_map,
@@ -106,6 +69,56 @@ impl BoardPlugin {
             });
     }
 
+    fn build_map(options: &BoardOptions) -> TileMap {
+        let mut tile_map = TileMap::empty(options.map_size.0, options.map_size.1);
+        tile_map.set_bombs(options.bomb_count);
+        #[cfg(feature = "debug")]
+        info!("{}", tile_map.console_output());
+        tile_map
+    }
+
+    fn build_tile_size(
+        window: Res<WindowDescriptor>,
+        options: &BoardOptions,
+        tile_map: &TileMap,
+    ) -> f32 {
+        match options.tile_size {
+            TileSize::Fixed(v) => v,
+            TileSize::Adaptive { min, max } => Self::adaptative_tile_size(
+                window,
+                (min, max),
+                (tile_map.width(), tile_map.height()),
+            ),
+        }
+    }
+
+    /// Board anchor position (bottom left)
+    fn build_board_position(options: &BoardOptions, board_size: Vec2) -> Vec3 {
+        match options.position {
+            BoardPosition::Centered { offset } => {
+                Vec3::new(-(board_size.x / 2.), -(board_size.y / 2.), 0.) + offset
+            }
+            BoardPosition::Custom(p) => p,
+        }
+    }
+
+    fn spawn_background(board_size: Vec2, parent: &mut ChildBuilder) {
+        // We spawn the board background sprite at the center of the board,
+        // since the sprite pivot is centered
+        parent
+            .spawn_bundle(SpriteBundle {
+                sprite: Sprite {
+                    color: Color::WHITE,
+                    custom_size: Some(board_size),
+                    ..Default::default()
+                },
+                transform: Transform::from_xyz(board_size.x / 2., board_size.y / 2., 0.),
+                ..Default::default()
+            })
+            .insert(Name::new("Background"));
+    }
+
+    // TODO: Refactor this to builder
     fn spawn_tiles(
         parent: &mut ChildBuilder,
         tile_map: &TileMap,
@@ -118,42 +131,14 @@ impl BoardPlugin {
         // Tiles
         for (y, line) in tile_map.iter().enumerate() {
             for (x, tile) in line.iter().enumerate() {
-                let coordinates = Coordinates {
-                    x: x as u16,
-                    y: y as u16,
-                };
+                let coordinates = Coordinates { x: x as u16, y: y as u16 };
                 let mut cmd = parent.spawn();
-                cmd.insert_bundle(SpriteBundle {
-                    sprite: Sprite {
-                        color,
-                        custom_size: Some(Vec2::splat(size - padding)),
-                        ..Default::default()
-                    },
-                    transform: Transform::from_xyz(
-                        (x as f32 * size) + (size / 2.),
-                        (y as f32 * size) + (size / 2.),
-                        1.,
-                    ),
-                    ..Default::default()
-                })
-                .insert(Name::new(format!("Tile ({}, {})", x, y)))
-                .insert(coordinates);
+                Self::insert_tile(&mut cmd, padding, size, y, x, coordinates, color);
 
                 match tile {
                     // If the tile is a bomb we add the matching component and a sprite child
                     Tile::Bomb => {
-                        cmd.insert(Bomb);
-                        cmd.with_children(|parent| {
-                            parent.spawn_bundle(SpriteBundle {
-                                sprite: Sprite {
-                                    custom_size: Some(Vec2::splat(size - padding)),
-                                    ..Default::default()
-                                },
-                                transform: Transform::from_xyz(0., 0., 1.),
-                                texture: bomb_image.clone(),
-                                ..Default::default()
-                            });
-                        });
+                        Self::insert_bomb(size, padding, &bomb_image, &mut cmd);
                     }
                     // If the tile is a bomb neighbour we add the matching component and a text child
                     Tile::BombNeighbor(v) => {
@@ -170,6 +155,47 @@ impl BoardPlugin {
                 }
             }
         }
+    }
+
+    fn insert_bomb(size: f32, padding: f32, bomb_image: &Handle<Image>, cmd: &mut EntityCommands) {
+        cmd.insert(Bomb);
+        cmd.with_children(|parent| {
+            parent.spawn_bundle(SpriteBundle {
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(size - padding)),
+                    ..Default::default()
+                },
+                transform: Transform::from_xyz(0., 0., 1.),
+                texture: bomb_image.clone(),
+                ..Default::default()
+            });
+        });
+    }
+
+    fn insert_tile(
+        cmd: &mut EntityCommands,
+        padding: f32,
+        size: f32,
+        y: usize,
+        x: usize,
+        coordinates: Coordinates,
+        color: Color,
+    ) {
+        cmd.insert_bundle(SpriteBundle {
+            sprite: Sprite {
+                color,
+                custom_size: Some(Vec2::splat(size - padding)),
+                ..Default::default()
+            },
+            transform: Transform::from_xyz(
+                (x as f32 * size) + (size / 2.),
+                (y as f32 * size) + (size / 2.),
+                1.,
+            ),
+            ..Default::default()
+        })
+        .insert(Name::new(format!("Tile ({}, {})", x, y)))
+        .insert(coordinates);
     }
 
     /// Generates the bomb counter text 2D Bundle for a given value
@@ -190,11 +216,7 @@ impl BoardPlugin {
             text: Text {
                 sections: vec![TextSection {
                     value: text,
-                    style: TextStyle {
-                        color,
-                        font,
-                        font_size: size,
-                    },
+                    style: TextStyle { color, font, font_size: size },
                 }],
                 alignment: TextAlignment {
                     vertical: VerticalAlign::Center,
