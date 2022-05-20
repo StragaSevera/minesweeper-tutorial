@@ -33,6 +33,7 @@ fn main() {
         safe_start: true,
         ..Default::default()
     })
+    .add_state(AppState::InGame)
     .add_plugin(BoardPlugin { running_state: AppState::InGame })
     .add_startup_system(camera_setup)
     .add_system(state_handler)
